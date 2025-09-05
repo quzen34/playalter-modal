@@ -15,90 +15,139 @@ app = modal.App("playalter-beast")
             "libsm6",
             "libxext6", 
             "libxrender-dev", 
-            "libgomp1"
+            "libgomp1",
+            "wget",
+            "unzip"
+        )
+        .run_commands(
+            "mkdir -p /root/.insightface/models",
+            "wget -q -O /tmp/buffalo_l.zip https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip",
+            "cd /root/.insightface/models && unzip -q /tmp/buffalo_l.zip"
         )
         .pip_install(
             "opencv-python-headless==4.8.1.78",
             "pillow==10.1.0",
             "numpy==1.24.4",
+            "insightface==0.7.3",
+            "onnxruntime==1.16.3",
             "requests==2.31.0"
         ),
-    memory=4096,
-    timeout=60
+    gpu="t4",
+    memory=8192,
+    timeout=300
 )
 def process_face_swap(source_b64: str, target_b64: str) -> dict:
-    """Simple working swap"""
+    """Real face swap with InsightFace"""
     try:
         import cv2
+        import insightface
+        from insightface.app import FaceAnalysis
         
-        # Decode PROPERLY
+        # Decode images
         source_bytes = base64.b64decode(source_b64)
         target_bytes = base64.b64decode(target_b64)
         
-        # numpy array olarak oku
         source_array = np.frombuffer(source_bytes, np.uint8)
         target_array = np.frombuffer(target_bytes, np.uint8)
         
-        # OpenCV ile decode et
         source_cv = cv2.imdecode(source_array, cv2.IMREAD_COLOR)
         target_cv = cv2.imdecode(target_array, cv2.IMREAD_COLOR)
         
-        if source_cv is None or target_cv is None:
+        # Initialize face analysis
+        app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+        app.prepare(ctx_id=0, det_size=(640, 640))
+        
+        # Detect faces
+        source_faces = app.get(source_cv)
+        target_faces = app.get(target_cv)
+        
+        if not source_faces:
+            # If no face, return original
+            _, buffer = cv2.imencode('.jpg', target_cv)
             return {
                 "success": False,
-                "message": "Image decode failed"
+                "output": base64.b64encode(buffer).decode(),
+                "message": "No face detected in source"
+            }
+            
+        if not target_faces:
+            _, buffer = cv2.imencode('.jpg', target_cv)
+            return {
+                "success": False,
+                "output": base64.b64encode(buffer).decode(),
+                "message": "No face detected in target"
             }
         
-        # Basit işlem - target'ı döndür
-        result_cv = target_cv
+        # Simple face region swap
+        result = target_cv.copy()
         
-        # JPEG olarak encode et
-        _, buffer = cv2.imencode('.jpg', result_cv)
+        # Get bounding boxes
+        s_bbox = source_faces[0].bbox.astype(int)
+        t_bbox = target_faces[0].bbox.astype(int)
+        
+        # Extract face from source
+        face = source_cv[s_bbox[1]:s_bbox[3], s_bbox[0]:s_bbox[2]]
+        
+        # Resize to target size
+        if face.size > 0:
+            face_resized = cv2.resize(face, (t_bbox[2]-t_bbox[0], t_bbox[3]-t_bbox[1]))
+            # Paste onto target
+            result[t_bbox[1]:t_bbox[3], t_bbox[0]:t_bbox[2]] = face_resized
+        
+        # Encode result
+        _, buffer = cv2.imencode('.jpg', result, [cv2.IMWRITE_JPEG_QUALITY, 95])
         result_b64 = base64.b64encode(buffer).decode()
         
         return {
             "success": True,
             "output": result_b64,
-            "message": f"Images processed: {source_cv.shape} -> {target_cv.shape}"
+            "message": f"Face swap successful! Detected {len(source_faces)} source, {len(target_faces)} target faces"
         }
         
     except Exception as e:
+        import traceback
         return {
             "success": False,
-            "message": f"Error: {str(e)}"
+            "message": str(e),
+            "trace": traceback.format_exc()
         }
 
 @app.local_entrypoint()
 def test():
     print("="*60)
-    print("PLAYALTER TEST - Fixed Version")
+    print("PLAYALTER FACE SWAP - REAL TEST")
     print("="*60)
     
-    # Basit test resimleri oluştur
-    print("Creating test images...")
+    # Obama ve Biden URL'leri
+    urls = {
+        "obama": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/President_Barack_Obama.jpg/480px-President_Barack_Obama.jpg",
+        "biden": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Joe_Biden_presidential_portrait.jpg/480px-Joe_Biden_presidential_portrait.jpg"
+    }
     
-    # Kırmızı kare
-    red_img = Image.new('RGB', (256, 256), 'red')
-    red_buffer = io.BytesIO()
-    red_img.save(red_buffer, format='JPEG')
-    red_b64 = base64.b64encode(red_buffer.getvalue()).decode()
+    print("Downloading Obama and Biden...")
     
-    # Mavi kare
-    blue_img = Image.new('RGB', (256, 256), 'blue')
-    blue_buffer = io.BytesIO()
-    blue_img.save(blue_buffer, format='JPEG')
-    blue_b64 = base64.b64encode(blue_buffer.getvalue()).decode()
+    obama = requests.get(urls["obama"]).content
+    biden = requests.get(urls["biden"]).content
     
-    print("Processing...")
-    result = process_face_swap.remote(red_b64, blue_b64)
+    obama_b64 = base64.b64encode(obama).decode()
+    biden_b64 = base64.b64encode(biden).decode()
+    
+    print("Processing face swap...")
+    result = process_face_swap.remote(obama_b64, biden_b64)
+    
+    print(f"Result: {result['message']}")
     
     if result["success"]:
-        print(f"✓ Success: {result['message']}")
-        with open("test_output.jpg", "wb") as f:
+        with open("obama_biden_swap.jpg", "wb") as f:
             f.write(base64.b64decode(result['output']))
-        print("✓ Saved: test_output.jpg")
+        print("Saved: obama_biden_swap.jpg")
     else:
-        print(f"✗ Failed: {result['message']}")
+        if "trace" in result:
+            print("Error trace:", result["trace"])
+        # Save original anyway
+        with open("output_original.jpg", "wb") as f:
+            f.write(base64.b64decode(result['output']))
+        print("Saved original: output_original.jpg")
 
 if __name__ == "__main__":
     modal.runner.run(app)
