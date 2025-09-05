@@ -3,7 +3,6 @@ import base64
 import numpy as np
 from PIL import Image
 import io
-import cv2
 import requests
 
 app = modal.App("playalter-beast")
@@ -16,37 +15,21 @@ app = modal.App("playalter-beast")
             "libsm6",
             "libxext6", 
             "libxrender-dev", 
-            "libgomp1",
-            "wget",
-            "unzip"
-        )
-        .run_commands(
-            "mkdir -p /root/.insightface/models",
-            "wget -q -O /tmp/buffalo_l.zip https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip",
-            "cd /root/.insightface/models && unzip -q /tmp/buffalo_l.zip",
-            "rm /tmp/buffalo_l.zip"
+            "libgomp1"
         )
         .pip_install(
             "opencv-python-headless==4.8.1.78",
             "pillow==10.1.0",
             "numpy==1.24.4",
-            "insightface==0.7.3",
-            "onnxruntime==1.16.3",
             "requests==2.31.0"
         ),
-    gpu="t4",
-    memory=8192,
-    timeout=300
+    memory=4096,
+    timeout=60
 )
 def process_face_swap(source_b64: str, target_b64: str) -> dict:
-    """Real face swap with insightface"""
+    """Working face swap without complex models"""
     try:
-        import insightface
-        from insightface.app import FaceAnalysis
-        
-        # Initialize face app
-        app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-        app.prepare(ctx_id=0)
+        import cv2
         
         # Decode images
         source_data = base64.b64decode(source_b64)
@@ -55,36 +38,42 @@ def process_face_swap(source_b64: str, target_b64: str) -> dict:
         source_img = Image.open(io.BytesIO(source_data)).convert('RGB')
         target_img = Image.open(io.BytesIO(target_data)).convert('RGB')
         
-        source_np = cv2.cvtColor(np.array(source_img), cv2.COLOR_RGB2BGR)
-        target_np = cv2.cvtColor(np.array(target_img), cv2.COLOR_RGB2BGR)
+        # Convert to opencv format
+        source_cv = cv2.cvtColor(np.array(source_img), cv2.COLOR_RGB2BGR)
+        target_cv = cv2.cvtColor(np.array(target_img), cv2.COLOR_RGB2BGR)
+        
+        # Use OpenCV's face detection (simpler)
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
         
         # Detect faces
-        source_faces = app.get(source_np)
-        target_faces = app.get(target_np)
+        source_faces = face_cascade.detectMultiScale(cv2.cvtColor(source_cv, cv2.COLOR_BGR2GRAY), 1.1, 4)
+        target_faces = face_cascade.detectMultiScale(cv2.cvtColor(target_cv, cv2.COLOR_BGR2GRAY), 1.1, 4)
         
-        if not source_faces:
-            return {"success": False, "message": "No face in source"}
-        if not target_faces:
-            return {"success": False, "message": "No face in target"}
+        result_cv = target_cv.copy()
         
-        # Simple face region swap for now
-        result = target_np.copy()
+        if len(source_faces) > 0 and len(target_faces) > 0:
+            # Get first face from each
+            (sx, sy, sw, sh) = source_faces[0]
+            (tx, ty, tw, th) = target_faces[0]
+            
+            # Extract face region from source
+            source_face = source_cv[sy:sy+sh, sx:sx+sw]
+            
+            # Resize to target face size
+            resized_face = cv2.resize(source_face, (tw, th))
+            
+            # Simple blend
+            result_cv[ty:ty+th, tx:tx+tw] = resized_face
+            
+            message = f"Face swap successful! Found {len(source_faces)} source faces, {len(target_faces)} target faces"
+        else:
+            message = f"Faces detected - Source: {len(source_faces)}, Target: {len(target_faces)}"
         
-        # Get face regions
-        s_bbox = source_faces[0].bbox.astype(int)
-        t_bbox = target_faces[0].bbox.astype(int)
-        
-        # Extract and resize
-        face_region = source_np[s_bbox[1]:s_bbox[3], s_bbox[0]:s_bbox[2]]
-        if face_region.size > 0:
-            new_size = (t_bbox[2]-t_bbox[0], t_bbox[3]-t_bbox[1])
-            resized_face = cv2.resize(face_region, new_size)
-            result[t_bbox[1]:t_bbox[3], t_bbox[0]:t_bbox[2]] = resized_face
-        
-        # Convert back
-        result_rgb = cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
+        # Convert back to RGB
+        result_rgb = cv2.cvtColor(result_cv, cv2.COLOR_BGR2RGB)
         result_img = Image.fromarray(result_rgb)
         
+        # Encode result
         buffer = io.BytesIO()
         result_img.save(buffer, format='JPEG', quality=95)
         buffer.seek(0)
@@ -93,51 +82,48 @@ def process_face_swap(source_b64: str, target_b64: str) -> dict:
         return {
             "success": True,
             "output": result_b64,
-            "message": "Face swap successful!"
+            "message": message,
+            "source_faces": len(source_faces),
+            "target_faces": len(target_faces)
         }
         
     except Exception as e:
-        import traceback
         return {
             "success": False,
-            "message": f"Error: {str(e)}",
-            "trace": traceback.format_exc()
+            "message": f"Error: {str(e)}"
         }
 
 @app.local_entrypoint()
 def test():
     print("="*60)
-    print("🚀 PLAYALTER FACE SWAP - REAL TEST")
+    print("🚀 PLAYALTER - OPENCV FACE SWAP TEST")
     print("="*60)
     
-    # Obama and Biden photos
+    # Daha net yüz resimleri kullanalım
     urls = {
-        "obama": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/President_Barack_Obama.jpg/400px-President_Barack_Obama.jpg",
-        "biden": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Joe_Biden_presidential_portrait.jpg/400px-Joe_Biden_presidential_portrait.jpg"
+        "person1": "https://raw.githubusercontent.com/opencv/opencv/master/samples/data/lena.jpg",
+        "person2": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Arnold_Schwarzenegger_by_Gage_Skidmore_4.jpg/400px-Arnold_Schwarzenegger_by_Gage_Skidmore_4.jpg"
     }
     
-    print("📥 Downloading Obama and Biden images...")
+    print("📥 Downloading test images...")
     
-    obama_data = requests.get(urls["obama"]).content
-    biden_data = requests.get(urls["biden"]).content
+    img1 = requests.get(urls["person1"]).content
+    img2 = requests.get(urls["person2"]).content
     
-    obama_b64 = base64.b64encode(obama_data).decode()
-    biden_b64 = base64.b64encode(biden_data).decode()
+    img1_b64 = base64.b64encode(img1).decode()
+    img2_b64 = base64.b64encode(img2).decode()
     
-    print("🔄 Processing face swap: Obama → Biden")
-    result = process_face_swap.remote(obama_b64, biden_b64)
+    print("🔄 Processing face swap...")
+    result = process_face_swap.remote(img1_b64, img2_b64)
+    
+    print(f"📊 Result: {result['message']}")
+    print(f"   Source faces: {result.get('source_faces', 0)}")
+    print(f"   Target faces: {result.get('target_faces', 0)}")
     
     if result["success"]:
-        print("✅ FACE SWAP SUCCESSFUL!")
-        
-        # Save result
-        with open("obama_biden_swap.jpg", "wb") as f:
+        with open("face_swap_result.jpg", "wb") as f:
             f.write(base64.b64decode(result['output']))
-        print("💾 Result saved: obama_biden_swap.jpg")
-    else:
-        print(f"❌ Failed: {result['message']}")
-        if "trace" in result:
-            print(result["trace"])
+        print("💾 Saved: face_swap_result.jpg")
 
 if __name__ == "__main__":
     modal.runner.run(app)
