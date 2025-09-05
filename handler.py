@@ -46,17 +46,7 @@ class FaceProcessor:
 @app.function(
     gpu="t4",
     image=modal.Image.debian_slim()
-        .apt_install(
-            "libgl1-mesa-glx", 
-            "libglib2.0-0", 
-            "libsm6", 
-            "libxext6", 
-            "libxrender-dev", 
-            "libgomp1", 
-            "wget", 
-            "unzip",
-            "libgthread-2.0-0"
-        )
+        .apt_install("libgl1-mesa-glx", "libglib2.0-0", "libsm6", "libxext6", "libxrender-dev", "libgomp1", "wget", "unzip")
         .run_commands(
             "mkdir -p /root/.insightface/models/buffalo_l",
             "wget -O /tmp/buffalo_l.zip https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip",
