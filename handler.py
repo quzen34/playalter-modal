@@ -86,8 +86,22 @@ def process_face_swap(source_b64: str, target_b64: str) -> dict:
         
         print(f"Faces detected: Source={len(source_faces) if source_faces else 0}, Target={len(target_faces) if target_faces else 0}")
         
-        # Simple swap - just return target for now
-        result = target_cv
+        # Simple swap if faces found
+        result = target_cv.copy()
+        
+        if source_faces and target_faces:
+            # Get bounding boxes
+            s_bbox = source_faces[0].bbox.astype(int)
+            t_bbox = target_faces[0].bbox.astype(int)
+            
+            # Extract face from source
+            face = source_cv[s_bbox[1]:s_bbox[3], s_bbox[0]:s_bbox[2]]
+            
+            # Resize and paste
+            if face.size > 0:
+                face_resized = cv2.resize(face, (t_bbox[2]-t_bbox[0], t_bbox[3]-t_bbox[1]))
+                result[t_bbox[1]:t_bbox[3], t_bbox[0]:t_bbox[2]] = face_resized
+                print("Face swap applied!")
         
         # Encode result
         _, buffer = cv2.imencode('.jpg', result, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -156,7 +170,7 @@ def test():
             if 'Source faces: 0' in msg:
                 print("⚠️ No faces detected - check image URLs")
             else:
-                print("✅ FACES DETECTED!")
+                print("✅ FACES DETECTED AND SWAPPED!")
                 
     except Exception as e:
         print(f"Error: {e}")
