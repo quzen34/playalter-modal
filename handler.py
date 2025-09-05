@@ -135,3 +135,48 @@ def test():
 if __name__ == "__main__":
     # Local test
     modal.runner.run(app)
+    @app.local_entrypoint()
+def test():
+    print("Testing PLAYALTER with REAL faces...")
+    
+    # Gerçek test resimleri
+    import requests
+    
+    try:
+        # InsightFace'in örnek yüzleri
+        print("📥 Downloading test faces...")
+        source_url = "https://raw.githubusercontent.com/deepinsight/insightface/master/examples/person1.jpg"
+        target_url = "https://raw.githubusercontent.com/deepinsight/insightface/master/examples/person2.jpg" 
+        
+        source_resp = requests.get(source_url)
+        target_resp = requests.get(target_url)
+        
+        if source_resp.status_code != 200 or target_resp.status_code != 200:
+            # Backup resimler
+            print("Using backup images...")
+            # Tek renkli değil, gerçek yüz içeren test base64'leri
+            source_b64 = None  # Buraya gerçek yüz base64'ü
+            target_b64 = None  # Buraya gerçek yüz base64'ü
+        else:
+            source_b64 = base64.b64encode(source_resp.content).decode()
+            target_b64 = base64.b64encode(target_resp.content).decode()
+        
+        print("🔄 Processing face swap...")
+        result = process_face_swap.remote(source_b64, target_b64)
+        
+        print(f"📊 Result: {result.get('status')} - {result.get('message')}")
+        
+        if result.get('status') == 'success':
+            print("✅✅✅ FACE SWAP BAŞARILI! ✅✅✅")
+            # Sonucu kaydet
+            with open("output.jpg", "wb") as f:
+                f.write(base64.b64decode(result['output']))
+            print("📸 Sonuç output.jpg olarak kaydedildi!")
+        else:
+            print(f"❌ Hata: {result.get('message')}")
+            
+    except Exception as e:
+        print(f"Test hatası: {e}")
+        # Fallback: Boş parametrelerle çağır
+        result = process_face_swap.remote()
+        print(f"Fallback result: {result}")
