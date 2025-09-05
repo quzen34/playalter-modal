@@ -123,34 +123,43 @@ def process_face_swap(source_b64: str, target_b64: str) -> dict:
 @app.local_entrypoint()
 def test():
     print("="*60)
-    print("PLAYALTER TEST - Simplified")
+    print("PLAYALTER - REAL FACE TEST")
     print("="*60)
     
-    # Simple test with generated images
-    print("Creating test images...")
+    # GERÇEK YÜZ RESİMLERİ
+    urls = {
+        "person1": "https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/biden.jpg",
+        "person2": "https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/obama.jpg"
+    }
     
-    # Create simple test images
-    img1 = Image.new('RGB', (256, 256), color='red')
-    img2 = Image.new('RGB', (256, 256), color='blue')
+    print("Downloading real face images...")
     
-    buffer1 = io.BytesIO()
-    buffer2 = io.BytesIO()
-    
-    img1.save(buffer1, format='JPEG')
-    img2.save(buffer2, format='JPEG')
-    
-    img1_b64 = base64.b64encode(buffer1.getvalue()).decode()
-    img2_b64 = base64.b64encode(buffer2.getvalue()).decode()
-    
-    print("Processing...")
-    result = process_face_swap.remote(img1_b64, img2_b64)
-    
-    print(f"Result: {result.get('message', 'No message')}")
-    
-    if result.get("success") and result.get("output"):
-        with open("test_output.jpg", "wb") as f:
-            f.write(base64.b64decode(result['output']))
-        print("Saved: test_output.jpg")
+    try:
+        img1_data = requests.get(urls["person1"]).content
+        img2_data = requests.get(urls["person2"]).content
+        
+        img1_b64 = base64.b64encode(img1_data).decode()
+        img2_b64 = base64.b64encode(img2_data).decode()
+        
+        print("Processing real faces...")
+        result = process_face_swap.remote(img1_b64, img2_b64)
+        
+        print(f"Result: {result.get('message')}")
+        
+        if result.get("success") and result.get("output"):
+            with open("biden_obama_result.jpg", "wb") as f:
+                f.write(base64.b64decode(result['output']))
+            print("✅ SAVED: biden_obama_result.jpg")
+            
+            # Parse message to check face count
+            msg = result.get('message', '')
+            if 'Source faces: 0' in msg:
+                print("⚠️ No faces detected - check image URLs")
+            else:
+                print("✅ FACES DETECTED!")
+                
+    except Exception as e:
+        print(f"Error: {e}")
 
 if __name__ == "__main__":
     modal.runner.run(app)
