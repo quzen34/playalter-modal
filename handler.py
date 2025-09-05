@@ -16,7 +16,7 @@ class FaceProcessor:
         
         self.app = FaceAnalysis(
             name='buffalo_l',
-            providers=['CPUExecutionProvider']  # CUDA yerine CPU kullan
+            providers=['CPUExecutionProvider']
         )
         self.app.prepare(ctx_id=0, det_size=(640, 640))
         print("✅ Face detection ready!")
@@ -25,7 +25,7 @@ class FaceProcessor:
         return self.app.get(image)
     
     def swap_face(self, source_img: np.ndarray, target_img: np.ndarray):
-        # RGB'ye çevir (RGBA ise)
+        # RGB'ye çevir
         if source_img.shape[-1] == 4:
             source_img = cv2.cvtColor(source_img, cv2.COLOR_RGBA2RGB)
         if target_img.shape[-1] == 4:
@@ -57,7 +57,8 @@ class FaceProcessor:
             "pillow==10.4.0",
             "numpy>=1.24.4",
             "insightface==0.7.3",
-            "onnxruntime==1.20.1"  # GPU yerine normal onnxruntime
+            "onnxruntime==1.20.1",
+            "requests"
         ),
     volumes={"/workspace/models": volume},
     timeout=600,
@@ -67,16 +68,15 @@ def process_face_swap(source_b64=None, target_b64=None):
     try:
         # Test için varsayılan resimler
         if not source_b64 or not target_b64:
-            # 1x1 beyaz piksel
             test_img = Image.new('RGB', (640, 640), color='white')
             
-            # Yüz çiz (basit dikdörtgen)
+            # Yüz çiz
             import cv2
             img_array = np.array(test_img)
             cv2.rectangle(img_array, (200, 200), (440, 440), (0, 0, 0), 2)
-            cv2.circle(img_array, (270, 280), 20, (0, 0, 0), -1)  # Sol göz
-            cv2.circle(img_array, (370, 280), 20, (0, 0, 0), -1)  # Sağ göz
-            cv2.ellipse(img_array, (320, 350), (60, 30), 0, 0, 180, (0, 0, 0), 2)  # Ağız
+            cv2.circle(img_array, (270, 280), 20, (0, 0, 0), -1)
+            cv2.circle(img_array, (370, 280), 20, (0, 0, 0), -1)
+            cv2.ellipse(img_array, (320, 350), (60, 30), 0, 0, 180, (0, 0, 0), 2)
             
             buffer = io.BytesIO()
             test_img_drawn = Image.fromarray(img_array)
@@ -104,7 +104,6 @@ def process_face_swap(source_b64=None, target_b64=None):
         result, message = processor.swap_face(source_np, target_np)
         
         if result is not None:
-            # Sonucu base64'e çevir
             result_img = Image.fromarray(result)
             buffer = io.BytesIO()
             result_img.save(buffer, format='JPEG', quality=95)
@@ -128,47 +127,31 @@ def process_face_swap(source_b64=None, target_b64=None):
 
 @app.local_entrypoint()
 def test():
-    print("Testing PLAYALTER face swap...")
-    result = process_face_swap.remote()
-    print(f"Result: {result}")
-
-if __name__ == "__main__":
-    # Local test
-    modal.runner.run(app)
-    @app.local_entrypoint()
-def test():
     print("Testing PLAYALTER with REAL faces...")
     
-    # Gerçek test resimleri
     import requests
     
     try:
-        # InsightFace'in örnek yüzleri
-        print("📥 Downloading test faces...")
-        source_url = "https://raw.githubusercontent.com/deepinsight/insightface/master/examples/person1.jpg"
-        target_url = "https://raw.githubusercontent.com/deepinsight/insightface/master/examples/person2.jpg" 
+        print("📥 Downloading test faces from GitHub...")
+        
+        # Kesin çalışan test resimleri
+        source_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/President_Barack_Obama.jpg/256px-President_Barack_Obama.jpg"
+        target_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Donald_Trump_official_portrait.jpg/256px-Donald_Trump_official_portrait.jpg"
         
         source_resp = requests.get(source_url)
         target_resp = requests.get(target_url)
         
-        if source_resp.status_code != 200 or target_resp.status_code != 200:
-            # Backup resimler
-            print("Using backup images...")
-            # Tek renkli değil, gerçek yüz içeren test base64'leri
-            source_b64 = None  # Buraya gerçek yüz base64'ü
-            target_b64 = None  # Buraya gerçek yüz base64'ü
-        else:
-            source_b64 = base64.b64encode(source_resp.content).decode()
-            target_b64 = base64.b64encode(target_resp.content).decode()
+        source_b64 = base64.b64encode(source_resp.content).decode()
+        target_b64 = base64.b64encode(target_resp.content).decode()
         
         print("🔄 Processing face swap...")
         result = process_face_swap.remote(source_b64, target_b64)
         
-        print(f"📊 Result: {result.get('status')} - {result.get('message')}")
+        print(f"📊 Result Status: {result.get('status')}")
+        print(f"📊 Result Message: {result.get('message')}")
         
         if result.get('status') == 'success':
             print("✅✅✅ FACE SWAP BAŞARILI! ✅✅✅")
-            # Sonucu kaydet
             with open("output.jpg", "wb") as f:
                 f.write(base64.b64decode(result['output']))
             print("📸 Sonuç output.jpg olarak kaydedildi!")
@@ -177,6 +160,9 @@ def test():
             
     except Exception as e:
         print(f"Test hatası: {e}")
-        # Fallback: Boş parametrelerle çağır
+        print("Fallback test çalıştırılıyor...")
         result = process_face_swap.remote()
         print(f"Fallback result: {result}")
+
+if __name__ == "__main__":
+    modal.runner.run(app)
