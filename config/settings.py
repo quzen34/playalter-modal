@@ -1,7 +1,7 @@
 import os
 from typing import Dict, Any, Optional, List
 from pathlib import Path
-from pydantic import BaseSettings, Field, validator
+from pydantic import BaseModel, Field, field_validator
 import json
 from enum import Enum
 
@@ -64,7 +64,7 @@ class CacheConfig:
     cache_ttl_seconds: int = 3600
     max_cache_size_mb: int = 512
 
-class PlayAlterSettings(BaseSettings):
+class PlayAlterSettings(BaseModel):
     """Main application settings."""
     
     # Environment
@@ -129,28 +129,24 @@ class PlayAlterSettings(BaseSettings):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
     
-    @validator('log_level')
+    @field_validator('log_level')
     def validate_log_level(cls, v):
         valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
         if v.upper() not in valid_levels:
             raise ValueError(f'Log level must be one of: {valid_levels}')
         return v.upper()
     
-    @validator('cors_origins')
+    @field_validator('cors_origins')
     def validate_cors_origins(cls, v):
         if isinstance(v, str):
             return [v]
         return v
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
-        
-        # Allow nested configuration from environment variables
-        env_nested_delimiter = "__"
-        
-        # Example: PLAYALTER__MODEL__MAX_IMAGE_SIZE would set model.max_image_size
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": False
+    }
 
 class ConfigManager:
     """Manage application configuration."""
