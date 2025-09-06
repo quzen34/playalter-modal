@@ -4,7 +4,8 @@
       "Bash(modal:*)",
       "Bash(timeout:*)",
       "Bash(chcp:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []
