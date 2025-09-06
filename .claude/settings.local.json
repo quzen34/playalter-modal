@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(modal:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(chcp:*)",
+      "Bash(powershell:*)"
     ],
     "deny": [],
     "ask": []
