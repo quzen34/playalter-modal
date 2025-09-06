@@ -10,7 +10,7 @@ sys.stderr.reconfigure(encoding='utf-8')
 # Run modal serve
 try:
     result = subprocess.run(
-        ['modal', 'deploy', 'main_app.py'],
+        ['modal', 'deploy', 'main_app_complete.py'],
         capture_output=False,
         text=True,
         encoding='utf-8',
