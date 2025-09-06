@@ -5,7 +5,8 @@
       "Bash(timeout:*)",
       "Bash(chcp:*)",
       "Bash(powershell:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(set PYTHONIOENCODING=utf-8)"
     ],
     "deny": [],
     "ask": []
